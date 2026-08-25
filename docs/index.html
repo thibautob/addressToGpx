@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>addr2gpx — adresses vers GPX</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1a1d21; --muted: #6a7076;
+    --accent: #2f6fde; --border: #d8dce1; --ok: #1a7f37; --nok: #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1e2126; --text: #e8eaed; --muted: #9aa0a6;
+      --accent: #5b8def; --border: #33373d; --ok: #4ec97c; --nok: #e57363;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, sans-serif;
+    display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 720px; }
+  h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+  p.sub { color: var(--muted); margin: 0 0 1.5rem; font-size: .9rem; }
+  label { display: block; font-weight: 600; margin: 1rem 0 .35rem; font-size: .85rem; }
+  textarea {
+    width: 100%; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: .6rem .75rem;
+    font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical;
+  }
+  textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  #addresses { min-height: 10rem; }
+  #log { min-height: 8rem; color: var(--muted); }
+  .actions { display: flex; gap: .75rem; margin-top: 1rem; }
+  button {
+    padding: .55rem 1.2rem; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel); color: var(--text); font: inherit; font-weight: 600;
+    cursor: pointer;
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  #status { margin-left: auto; align-self: center; font-size: .85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>addr2gpx</h1>
+  <p class="sub">Géocode une liste d'adresses (API Géoplateforme IGN) et génère un fichier GPX de waypoints. Une adresse par ligne, lignes commençant par <code>#</code> ignorées.</p>
+
+  <label for="addresses">Adresses</label>
+  <textarea id="addresses" placeholder="5 avenue Anatole France, Paris&#10;Place Bellecour, Lyon" spellcheck="false"></textarea>
+
+  <div class="actions">
+    <button id="create" class="primary" disabled>Créer le GPX</button>
+    <button id="download" disabled>Télécharger le GPX</button>
+    <span id="status">Chargement du module WASM…</span>
+  </div>
+
+  <label for="log">Journal</label>
+  <textarea id="log" readonly spellcheck="false"></textarea>
+</main>
+
+<script src="wasm_exec.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const createBtn = $("create"), downloadBtn = $("download"), logBox = $("log"), status = $("status");
+  let gpxContent = null;
+
+  function log(msg) {
+    logBox.value += msg + "\n";
+    logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // Load the Go WASM module. Fallback to arrayBuffer for servers that
+  // don't send the application/wasm MIME type required by instantiateStreaming.
+  const go = new Go();
+  (async () => {
+    try {
+      let result;
+      try {
+        result = await WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject);
+      } catch {
+        const buf = await (await fetch("main.wasm")).arrayBuffer();
+        result = await WebAssembly.instantiate(buf, go.importObject);
+      }
+      go.run(result.instance); // runs until the Go program exits — do not await
+      createBtn.disabled = false;
+      status.textContent = "Prêt";
+    } catch (err) {
+      status.textContent = "Échec du chargement WASM";
+      log("NOK  chargement du module : " + err);
+    }
+  })();
+
+  createBtn.addEventListener("click", async () => {
+    const input = $("addresses").value;
+    if (!input.trim()) { log("NOK  aucune adresse saisie"); return; }
+
+    logBox.value = "";
+    gpxContent = null;
+    createBtn.disabled = true;
+    downloadBtn.disabled = true;
+    status.textContent = "Géocodage en cours…";
+
+    try {
+      gpxContent = await createGPX(input, log);
+      downloadBtn.disabled = false;
+      status.textContent = "GPX prêt";
+      log("OK   GPX généré (" + gpxContent.length + " octets)");
+    } catch (err) {
+      status.textContent = "Échec";
+      log("NOK  " + (err.message || err));
+    } finally {
+      createBtn.disabled = false;
+    }
+  });
+
+  downloadBtn.addEventListener("click", () => {
+    const blob = new Blob([gpxContent], { type: "application/gpx+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "adresses.gpx";
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
+</body>
+</html>
