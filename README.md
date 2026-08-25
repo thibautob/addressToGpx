@@ -5,7 +5,7 @@ Géocode une liste d'adresses françaises via l'[API Géoplateforme IGN](https:/
 Deux modes, même logique (`gpx.go`) :
 
 - **CLI** (`main.go`, build tag `!js`) : lit les adresses sur stdin, écrit le GPX sur stdout.
-- **Web / WASM** (`main_wasm.go`, build tag `js && wasm`) : app statique dans `docs/`, hébergeable sur GitHub Pages. Les appels HTTP passent par `fetch` (l'API IGN autorise le CORS).
+- **Web / WASM** (`main_wasm.go`, build tag `js && wasm`) : app statique dans `docs/`, hébergeable sur GitHub Pages. Les appels HTTP passent par `fetch` (l'API IGN autorise le CORS). Après génération, la page affiche un aperçu du parcours (Leaflet + tuiles OpenStreetMap via CDN) : marqueurs numérotés dans l'ordre de visite, tracé du trajet si l'optimisation est active. Sans réseau vers le CDN, le viewer est simplement absent, le reste fonctionne.
 
 ## Commandes
 

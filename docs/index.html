@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>addr2gpx — adresses vers GPX</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
   :root {
     --bg: #f6f7f9; --panel: #ffffff; --text: #1a1d21; --muted: #6a7076;
@@ -47,6 +48,17 @@
   button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
   button:disabled { opacity: .45; cursor: not-allowed; }
   #status { margin-left: auto; align-self: center; font-size: .85rem; color: var(--muted); }
+  #mapwrap { display: none; margin-top: 1rem; }
+  #map {
+    height: 380px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--panel);
+  }
+  .num-marker {
+    background: var(--accent); color: #fff; border: 2px solid #fff;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font: 600 12px/1 system-ui, sans-serif;
+    box-shadow: 0 1px 3px rgba(0,0,0,.4);
+  }
 </style>
 </head>
 <body>
@@ -65,10 +77,16 @@
     <span id="status">Chargement du module WASM…</span>
   </div>
 
+  <div id="mapwrap">
+    <label>Aperçu du parcours</label>
+    <div id="map"></div>
+  </div>
+
   <label for="log">Journal</label>
   <textarea id="log" readonly spellcheck="false"></textarea>
 </main>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="wasm_exec.js"></script>
 <script>
   const $ = (id) => document.getElementById(id);
@@ -78,6 +96,45 @@
   function log(msg) {
     logBox.value += msg + "\n";
     logBox.scrollTop = logBox.scrollHeight;
+  }
+
+  // GPX viewer: numbered markers for each waypoint, polyline only when the
+  // document carries an ordered <rte> (i.e. optimization was enabled).
+  let map = null, routeLayer = null;
+  function showMap(gpxText) {
+    if (typeof L === "undefined") return; // Leaflet CDN unreachable — skip viewer
+    const doc = new DOMParser().parseFromString(gpxText, "application/xml");
+    const rtepts = [...doc.querySelectorAll("rtept")];
+    const pts = (rtepts.length ? rtepts : [...doc.querySelectorAll("wpt")]).map((el) => ({
+      lat: parseFloat(el.getAttribute("lat")),
+      lon: parseFloat(el.getAttribute("lon")),
+      name: el.querySelector("name")?.textContent ?? "",
+    }));
+    if (!pts.length) return;
+
+    $("mapwrap").style.display = "block";
+    if (!map) {
+      map = L.map("map");
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+    }
+    if (routeLayer) routeLayer.remove();
+    routeLayer = L.layerGroup().addTo(map);
+
+    const latlngs = pts.map((p) => [p.lat, p.lon]);
+    const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim();
+    if (rtepts.length) {
+      L.polyline(latlngs, { color: accent, weight: 3, opacity: 0.8 }).addTo(routeLayer);
+    }
+    pts.forEach((p, i) => {
+      L.marker([p.lat, p.lon], {
+        icon: L.divIcon({ className: "num-marker", html: String(i + 1), iconSize: [24, 24] }),
+      }).bindPopup(`${i + 1}. ${p.name}`).addTo(routeLayer);
+    });
+
+    map.invalidateSize(); // the container was display:none at map creation time
+    map.fitBounds(L.latLngBounds(latlngs).pad(0.15));
   }
 
   // Load the Go WASM module. Fallback to arrayBuffer for servers that
@@ -116,6 +173,7 @@
       downloadBtn.disabled = false;
       status.textContent = "GPX prêt";
       log("OK   GPX généré (" + gpxContent.length + " octets)");
+      showMap(gpxContent);
     } catch (err) {
       status.textContent = "Échec";
       log("NOK  " + (err.message || err));
