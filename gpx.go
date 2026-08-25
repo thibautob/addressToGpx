@@ -30,12 +30,21 @@ type wpt struct {
 	Desc string  `xml:"desc,omitempty"`
 }
 
+// rte carries the optimized visiting order: GPX <wpt> elements are unordered
+// by spec, only a <rte> makes bike apps (Komoot, Garmin, OsmAnd) follow the
+// sequence. Field order matters: the GPX 1.1 schema puts rte after wpt.
+type rte struct {
+	Name   string `xml:"name"`
+	Rtepts []wpt  `xml:"rtept"`
+}
+
 type gpx struct {
 	XMLName xml.Name `xml:"gpx"`
 	Xmlns   string   `xml:"xmlns,attr"`
 	Version string   `xml:"version,attr"`
 	Creator string   `xml:"creator,attr"`
 	Wpts    []wpt    `xml:"wpt"`
+	Rte     *rte     `xml:"rte,omitempty"`
 }
 
 // requestInterval paces requests well under the 50 req/s API limit.
@@ -102,8 +111,10 @@ func geocode(c *http.Client, addr string, logf func(string)) (*wpt, error) {
 
 // generate geocodes each non-empty, non-comment line of input and returns the
 // GPX document. logf receives one progress line per address; failures are
-// logged and skipped, they do not abort the run.
-func generate(c *http.Client, input string, logf func(string)) (string, error) {
+// logged and skipped, they do not abort the run. With optimize, waypoints are
+// reordered as an open bike path from the first address and an ordered <rte>
+// is emitted; without it, input order is kept and no route is added.
+func generate(c *http.Client, input string, optimize bool, logf func(string)) (string, error) {
 	out := gpx{Xmlns: "http://www.topografix.com/GPX/1/1", Version: "1.1", Creator: "addr2gpx"}
 
 	first := true
@@ -128,6 +139,16 @@ func generate(c *http.Client, input string, logf func(string)) (string, error) {
 
 	if len(out.Wpts) == 0 {
 		return "", fmt.Errorf("aucune adresse géocodée")
+	}
+
+	// Optimize the visiting order (open path, fixed start = first address).
+	if optimize {
+		if len(out.Wpts) >= 3 {
+			before := pathLen(out.Wpts)
+			out.Wpts = orderOpen(out.Wpts)
+			logf(fmt.Sprintf("Ordre optimisé (vol d'oiseau) : %.1f km -> %.1f km", before/1000, pathLen(out.Wpts)/1000))
+		}
+		out.Rte = &rte{Name: "addr2gpx — ordre optimisé", Rtepts: out.Wpts}
 	}
 
 	var sb strings.Builder

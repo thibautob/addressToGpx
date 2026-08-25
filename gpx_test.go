@@ -73,6 +73,54 @@ func TestGeocodeGivesUpAfterMaxRetries(t *testing.T) {
 	}
 }
 
+func TestGenerateEmitsOptimizedRoute(t *testing.T) {
+	// Three collinear addresses given out of order: C is between A and B, so
+	// the optimized open path from A must visit C before B.
+	coords := map[string][2]float64{ // name -> [lon, lat]
+		"A": {5.0, 45.0},
+		"B": {5.0, 45.2},
+		"C": {5.0, 45.1},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		c := coords[r.URL.Query().Get("q")]
+		fmt.Fprintf(w, `{"features":[{"geometry":{"coordinates":[%f,%f]},"properties":{"label":"x","score":1}}]}`, c[0], c[1])
+	}))
+	defer srv.Close()
+
+	old := geocodeBase
+	geocodeBase = srv.URL + "/?q="
+	defer func() { geocodeBase = old }()
+
+	out, err := generate(srv.Client(), "A\nB\nC\n", true, func(string) {})
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if !strings.Contains(out, "<rte>") {
+		t.Fatal("output has no <rte> element")
+	}
+	iA := strings.Index(out, "<name>A</name>")
+	iB := strings.Index(out, "<name>B</name>")
+	iC := strings.Index(out, "<name>C</name>")
+	if iA == -1 || iB == -1 || iC == -1 || !(iA < iC && iC < iB) {
+		t.Errorf("waypoints not in optimized order A,C,B:\n%s", out)
+	}
+
+	// Without optimization: input order preserved, no route element.
+	out, err = generate(srv.Client(), "A\nB\nC\n", false, func(string) {})
+	if err != nil {
+		t.Fatalf("generate (optimize=false): %v", err)
+	}
+	if strings.Contains(out, "<rte>") {
+		t.Error("optimize=false must not emit a <rte> element")
+	}
+	iA = strings.Index(out, "<name>A</name>")
+	iB = strings.Index(out, "<name>B</name>")
+	iC = strings.Index(out, "<name>C</name>")
+	if !(iA < iB && iB < iC) {
+		t.Errorf("optimize=false must keep input order A,B,C:\n%s", out)
+	}
+}
+
 func TestRetryDelayFallbackIsExponential(t *testing.T) {
 	resp := &http.Response{Header: http.Header{}}
 	for attempt, want := range []time.Duration{time.Second, 2 * time.Second, 4 * time.Second} {

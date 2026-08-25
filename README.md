@@ -23,6 +23,18 @@ make serve                        # preview local sur http://localhost:8000
 
 Format d'entrée : une adresse par ligne, lignes vides et lignes commençant par `#` ignorées.
 
+## Optimisation de l'ordre de visite
+
+À partir de 3 adresses, l'ordre des waypoints est optimisé pour minimiser le trajet total (`tsp.go`) : trajet **ouvert** (pas de retour au départ), départ fixé sur la **première adresse** du fichier.
+
+Optionnel, activé par défaut : flag `-optimize=false` côté CLI (`./addr2gpx -optimize=false < adresses.txt`), checkbox « Optimiser l'ordre du trajet » côté web. Désactivé, le GPX garde l'ordre du fichier et n'émet pas de `<rte>`.
+
+- Heuristique : nearest-neighbor puis 2-opt sur distances haversine (vol d'oiseau) — approximation raisonnable pour du vélo en ville, aucune dépendance externe, fonctionne aussi en WASM.
+- Le GPX contient les `<wpt>` réordonnés **et** une `<rte>` avec les mêmes points : les `<wpt>` sont non ordonnés par spec, seule la route fait suivre la séquence aux apps vélo (Komoot, Garmin, OsmAnd).
+- Le gain est loggé sur stderr : `Ordre optimisé (vol d'oiseau) : X km -> Y km`.
+
+Pour un ordre basé sur le vrai réseau cyclable (sens uniques, ponts…), brancher une API de routage (OSRM `/trip`, openrouteservice `/optimization`) serait l'étape suivante.
+
 ## Rate limit
 
 L'API impose 50 req/s. Protection à deux niveaux (`gpx.go`) :

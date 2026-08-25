@@ -3,6 +3,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 )
 
 func main() {
+	optimize := flag.Bool("optimize", true, "réordonner les waypoints (trajet ouvert, départ = première adresse) et émettre une <rte>")
+	flag.Parse()
+
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
@@ -18,7 +22,7 @@ func main() {
 	}
 
 	c := &http.Client{Timeout: 10 * time.Second}
-	out, err := generate(c, string(input), func(msg string) {
+	out, err := generate(c, string(input), *optimize, func(msg string) {
 		fmt.Fprintln(os.Stderr, msg)
 	})
 	if err != nil {

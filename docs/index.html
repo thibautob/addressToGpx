@@ -33,6 +33,11 @@
   textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
   #addresses { min-height: 10rem; }
   #log { min-height: 8rem; color: var(--muted); }
+  label.check {
+    display: flex; align-items: center; gap: .5rem;
+    font-weight: 400; font-size: .9rem; margin-top: .75rem; cursor: pointer;
+  }
+  label.check input { accent-color: var(--accent); }
   .actions { display: flex; gap: .75rem; margin-top: 1rem; }
   button {
     padding: .55rem 1.2rem; border-radius: 8px; border: 1px solid var(--border);
@@ -51,6 +56,8 @@
 
   <label for="addresses">Adresses</label>
   <textarea id="addresses" placeholder="5 avenue Anatole France, Paris&#10;Place Bellecour, Lyon" spellcheck="false"></textarea>
+
+  <label class="check"><input type="checkbox" id="optimize" checked> Optimiser l'ordre du trajet (vélo, trajet ouvert, départ = première adresse)</label>
 
   <div class="actions">
     <button id="create" class="primary" disabled>Créer le GPX</button>
@@ -105,7 +112,7 @@
     status.textContent = "Géocodage en cours…";
 
     try {
-      gpxContent = await createGPX(input, log);
+      gpxContent = await createGPX(input, $("optimize").checked, log);
       downloadBtn.disabled = false;
       status.textContent = "GPX prêt";
       log("OK   GPX généré (" + gpxContent.length + " octets)");
